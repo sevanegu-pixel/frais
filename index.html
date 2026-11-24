@@ -99,7 +99,8 @@ body.plusieurs iframe#app { top: calc(45px + env(safe-area-inset-top)); height: 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
   if (!actuelle) { document.getElementById("sansLien").hidden = false; return; }
   var cle = actuelle.cle;
-  var adresse = (actuelle.s ? "https://script.google.com/macros/s/" + actuelle.s + "/exec" : EXEC) + "?cle=" + cle;
+  // Une autre structure : sa Compta sert elle-même l'appli du personnel (« frais=1 »).
+  var adresse = (actuelle.s ? "https://script.google.com/macros/s/" + actuelle.s + "/exec" : EXEC) + "?cle=" + cle + (actuelle.s ? "&frais=1" : "");
   // Plusieurs structures : la barre du haut pour changer.
   if (structures.length > 1) {
     var nav = document.getElementById("structures"), esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
