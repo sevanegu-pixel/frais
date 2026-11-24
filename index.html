@@ -30,6 +30,19 @@ iframe#app { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border
 #barre { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 10; display: none; max-width: 520px; margin: 0 auto;
   background: #1b1b1b; color: #f3eee9; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.5); padding: 12px 40px 12px 14px; gap: 12px; align-items: center; font-size: 14px; line-height: 1.4; }
 #barre.ouvert { display: flex; }
+/* Plusieurs structures (23.11.2026) : une barre en haut pour choisir à laquelle envoyer ses frais. */
+#structures { position: fixed; top: 0; left: 0; right: 0; z-index: 11; display: none; align-items: center; gap: 8px; height: 44px; padding: env(safe-area-inset-top) 10px 0; background: #0e0e0e; border-bottom: 1px solid #262626; }
+#structures.ouvert { display: flex; }
+body.plusieurs iframe#app { top: calc(45px + env(safe-area-inset-top)); height: calc(100% - 45px - env(safe-area-inset-top)); }
+#structures summary { list-style: none; display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 15px; color: #f3eee9; }
+#structures summary::-webkit-details-marker { display: none; }
+#structures summary span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: calc(100vw - 90px); }
+#structures summary::after { content: "▾"; color: #8a8086; font-weight: 400; }
+#structures details[open] summary, #structures summary:hover { background: #1b1b1b; }
+#structures .liste { position: absolute; top: 44px; left: 10px; min-width: 240px; max-width: calc(100vw - 20px); background: #1b1b1b; border-radius: 14px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); display: flex; flex-direction: column; }
+#structures .liste button { border: 0; background: none; color: #f3eee9; font: inherit; font-size: 15px; text-align: left; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
+#structures .liste button[aria-current="true"] { background: #2a2a2a; color: #ffc04a; }
+#structures .liste .doux { color: #8a8086; font-size: 13px; }
 #barre img { width: 44px; height: 44px; border-radius: 11px; flex: none; }
 #barre .txt { flex: 1; min-width: 0; }
 #barre .txt b { display: block; color: #ffc04a; font-size: 15px; }
@@ -41,11 +54,12 @@ iframe#app { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border
 <main id="accueil">
   <img class="logo" src="frais_192.png" alt="">
   <h1>Frais</h1>
-  <p>Tes tickets de défraiement pour la Cie Origami.</p>
+  <p>Tes tickets de défraiement, envoyés à la structure qui te rembourse.</p>
   <a class="btn" id="ouvrir" hidden>Ouvrir mes défraiements</a>
-  <div class="carte" id="sansLien" hidden>Ouvre le <b>lien personnel</b> que la Cie Origami t'a envoyé : il te connecte directement, sans mot de passe.</div>
+  <div class="carte" id="sansLien" hidden>Ouvre le <b>lien personnel</b> que ta structure (la Cie Origami, par exemple) t'a envoyé : il te connecte directement, sans mot de passe.</div>
   <div class="carte" id="install" hidden></div>
 </main>
+<nav id="structures" aria-label="Structures"></nav>
 <div id="barre" role="dialog" aria-label="Installer Frais">
   <img src="frais_192.png" alt="">
   <div class="txt" id="barreTexte"></div>
@@ -54,16 +68,53 @@ iframe#app { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border
 </div>
 <script>
 (function () {
+  // Frais de la Cie Origami (lien « ?cle=… ») ; une autre structure ajoute « &s=<son Frais>&n=<son nom> » à son lien (23.11.2026).
+  // L'appli garde toutes les structures reçues sur ce téléphone et montre en haut celle à qui l'on envoie ses frais.
   var EXEC = "https://script.google.com/macros/s/AKfycbwIjgSj2dPJm_yubC6EF8tf9kCQK66bCLQYzOMkeny_buAxIkEG1CZRNSYCJ5t-cBWn/exec";
-  var CLE = "origami_frais_cle";
-  function lire() { try { return localStorage.getItem(CLE) || ""; } catch (e) { return ""; } }
-  function garder(v) { try { localStorage.setItem(CLE, v); } catch (e) {} }
-  var m = location.search.match(/[?&]cle=([A-Za-z0-9]{16,64})(&|$)/);
-  var cle = m ? m[1] : lire();
-  if (m) garder(m[1]);
+  var CLE = "origami_frais_cle", LISTE = "origami_frais_structures", CHOIX = "origami_frais_choisi";
+  function lireK(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+  function garderK(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
+  var FORME_CLE = /^[A-Za-z0-9]{16,64}$/, FORME_S = /^AKfycb[\w-]{20,120}$/;
+  function propre(x) { return x && FORME_CLE.test(x.cle) && (x.s === "" || FORME_S.test(x.s)) && typeof x.nom === "string"; }
+  var structures = []; try { structures = JSON.parse(lireK(LISTE) || "[]"); } catch (e) { structures = []; }
+  structures = (Array.isArray(structures) ? structures : []).filter(propre).slice(0, 20);
+  // Avant le 23.11 : un seul lien, celui de la Cie Origami.
+  var ancienne = lireK(CLE);
+  if (FORME_CLE.test(ancienne) && !structures.some(function (x) { return x.s === "" && x.cle === ancienne; })) structures.unshift({ s: "", cle: ancienne, nom: "Cie Origami" });
+  function q(nom, forme) { var r = new RegExp("[?&]" + nom + "=([^&#]*)").exec(location.search); var v = ""; try { v = r ? decodeURIComponent(r[1].replace(/\+/g, " ")) : ""; } catch (e) { v = ""; } return forme.test(v) ? v : ""; }
+  var cleRecue = q("cle", FORME_CLE), sRecue = q("s", FORME_S), nomRecu = q("n", /^[^<>]{1,60}$/).trim();
+  function id(x) { return x.s + "|" + x.cle; }
+  var choisi = lireK(CHOIX);
+  if (cleRecue) {
+    var neuve = { s: sRecue, cle: cleRecue, nom: nomRecu || (sRecue ? "Ma structure" : "Cie Origami") };
+    var deja = structures.filter(function (x) { return x.s === neuve.s; })[0];   // même structure : le nouveau lien remplace l'ancien
+    if (deja) { deja.cle = neuve.cle; if (nomRecu) deja.nom = nomRecu; neuve = deja; } else structures.push(neuve);
+    choisi = id(neuve);   // l'adresse garde son lien : sur iPhone, l'icône ajoutée à l'écran d'accueil s'ouvre avec elle
+  }
+  function lienDe(x) { return location.pathname + "?cle=" + x.cle + (x.s ? "&s=" + x.s + "&n=" + encodeURIComponent(x.nom) : ""); }
+  function retenir() { garderK(LISTE, structures.length ? JSON.stringify(structures) : ""); garderK(CHOIX, choisi); var cie = structures.filter(function (x) { return x.s === ""; })[0]; garderK(CLE, cie ? cie.cle : ""); }
+  var actuelle = structures.filter(function (x) { return id(x) === choisi; })[0] || structures[0] || null;
+  if (actuelle) choisi = id(actuelle);
+  retenir();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function () {});
-  if (!cle) { document.getElementById("sansLien").hidden = false; return; }
-  var adresse = EXEC + "?cle=" + cle;
+  if (!actuelle) { document.getElementById("sansLien").hidden = false; return; }
+  var cle = actuelle.cle;
+  // Une autre structure : sa Compta sert elle-même l'appli du personnel (« frais=1 »).
+  var adresse = (actuelle.s ? "https://script.google.com/macros/s/" + actuelle.s + "/exec" : EXEC) + "?cle=" + cle + (actuelle.s ? "&frais=1" : "");
+  // Plusieurs structures : la barre du haut pour changer.
+  if (structures.length > 1) {
+    var nav = document.getElementById("structures"), esc = function (t) { return String(t).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+    var h = '<details><summary><span>' + esc(actuelle.nom) + '</span></summary><div class="liste" role="menu"><div class="doux" style="padding:6px 12px">Envoyer mes frais à :</div>';
+    structures.forEach(function (x, i) { h += '<button role="menuitem" data-i="' + i + '"' + (x === actuelle ? ' aria-current="true"' : "") + ">" + esc(x.nom) + "</button>"; });
+    nav.innerHTML = h + "</div></details>";
+    nav.classList.add("ouvert"); document.body.classList.add("plusieurs");
+    nav.addEventListener("click", function (e) {
+      var b = e.target.closest && e.target.closest("button[data-i]"); if (!b) return;
+      var x = structures[+b.getAttribute("data-i")]; if (!x || x === actuelle) { nav.querySelector("details").open = false; return; }
+      choisi = id(x); retenir(); location.replace(lienDe(x));
+    });
+    document.addEventListener("click", function (e) { var d = nav.querySelector("details[open]"); if (d && !nav.contains(e.target)) d.open = false; });
+  }
   // L'appli s'ouvre dans la page : on reste sur cette adresse (icône, plein écran, pas de bandeau Google).
   document.getElementById("accueil").hidden = true;
   var cadre = document.createElement("iframe");
